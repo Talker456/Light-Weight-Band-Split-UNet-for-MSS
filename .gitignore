@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+
+data/
+checkpoints/
+results/
+
+
+examples/
+tests/
+
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store

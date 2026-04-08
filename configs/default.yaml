@@ -1,0 +1,25 @@
+# Moises-Light Configuration (Enc-Dec V3)
+
+audio:
+  sample_rate: 44100
+  n_fft: 6144
+  hop_length: 1024
+  win_length: 6144
+  duration: 4.0  # Reduced from 9.0 to save VRAM
+
+model:
+  name: "moises_light"
+  num_layers: 3   # Encoder layers
+  num_dec_layers: 1 # Decoder layers (Asymmetric UNet)
+  num_bands: 4   # N_band: Efficient equal subband splitting
+  G: 8          # Growth factor for hierarchical channels(num_bands * G)
+  n_rope: 3      # Number of RoPE Transformer blocks in bottleneck
+  num_heads: 8   # Number of attention heads
+  dropout: 0.1
+
+training:
+  batch_size: 2  # Reduced from 16 to fit 8GB VRAM
+  lr: 0.0002     # 2e-4 (as per paper)
+  epochs: 50
+  optimizer: "adamw"
+  scheduler: "cosine"
