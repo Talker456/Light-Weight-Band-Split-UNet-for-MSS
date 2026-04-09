@@ -110,14 +110,18 @@ def evaluate_project(root_dir, checkpoint_dir, config_path):
         
         try:
             # cSDR: Calculate per-second window
-            res_c = museval.evaluate(ref, est, win=sample_rate, hop=sample_rate)
+            # Ensure win and hop are integers as museval/mir_eval might be sensitive to types
+            res_c = museval.evaluate(ref, est, win=int(sample_rate), hop=int(sample_rate))
             all_scores_chunk.append(res_c)
             
-            # uSDR: Calculate per-track (win=None)
-            res_u = museval.evaluate(ref, est, win=None, hop=None)
+            # uSDR: Calculate per-track (Use full length to avoid NoneType comparison error)
+            track_length = ref.shape[1]
+            res_u = museval.evaluate(ref, est, win=track_length, hop=track_length)
             all_scores_track.append(res_u)
         except Exception as e:
             print(f"Error evaluating {track_name}: {e}")
+            import traceback
+            traceback.print_exc() # Print full stack trace for better debugging
 
     # Results aggregation
     print("\n" + "="*60)
