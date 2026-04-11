@@ -30,9 +30,10 @@ class CompositeLoss(nn.Module):
             waveform_l1 = F.l1_loss(est_audio, tgt_audio)
             
             # 2. Activate MR-STFT Loss (auraloss-based)
-            stft_loss = self.mr_stft_loss(est_audio, tgt_audio)
+            # stft_loss = self.mr_stft_loss(est_audio, tgt_audio)
             
             # Sum for balancing the two losses (generally 1:1 ratio is used)
-            total_loss += (waveform_l1 + stft_loss)
+            # total_loss += (waveform_l1 + stft_loss)
+            total_loss += waveform_l1
             
         return total_loss / num_stems
