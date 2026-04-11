@@ -116,7 +116,7 @@ def separate(input_path, output_dir, config_path, target_stems=None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", type=str, required=True)
-    parser.add_argument("--output", type=str, default="output")
+    parser.add_argument("--output", type=str, default="results")
     parser.add_argument("--stems", type=str, nargs="+", default=["all"])
     parser.add_argument("--config", type=str, default="configs/default.yaml")
     args = parser.parse_args()

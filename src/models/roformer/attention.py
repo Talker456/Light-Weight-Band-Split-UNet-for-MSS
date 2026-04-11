@@ -2,6 +2,16 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+class RMSNorm(nn.Module):
+    """RMS (Root Mean Square) Normalization."""
+    def __init__(self, dim):
+        super().__init__()
+        self.scale = dim ** 0.5
+        self.gamma = nn.Parameter(torch.ones(dim))
+
+    def forward(self, x):
+        return F.normalize(x, dim=-1) * self.scale * self.gamma
+
 class RotaryPositionalEmbedding(nn.Module):
     """RoPE (Rotary Positional Embedding) module."""
     def __init__(self, dim, max_seq_len=2048):
@@ -17,6 +27,7 @@ class RotaryPositionalEmbedding(nn.Module):
         emb = torch.cat((freqs, freqs), dim=-1)
         self.register_buffer("cos_cached", emb.cos()[None, None, :, :])
         self.register_buffer("sin_cached", emb.sin()[None, None, :, :])
+        self.max_seq_len = seq_len
 
     def forward(self, x, seq_len=None):
         if seq_len > self.max_seq_len:
@@ -34,7 +45,7 @@ def apply_rotary_pos_emb(q, k, cos, sin):
     return (q * cos) + (rotate_half(q) * sin), (k * cos) + (rotate_half(k) * sin)
 
 class RoPEAttention(nn.Module):
-    """Self-Attention module with RoPE application."""
+    """Self-Attention module with RoPE application and Gating."""
     def __init__(self, dim, num_heads, dropout=0.1):
         super().__init__()
         self.num_heads = num_heads
@@ -43,6 +54,10 @@ class RoPEAttention(nn.Module):
 
         self.qkv = nn.Linear(dim, dim * 3, bias=False)
         self.attn_drop = nn.Dropout(dropout)
+        
+        # Gating Layer
+        self.to_gates = nn.Linear(dim, num_heads)
+        
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(dropout)
         
@@ -60,19 +75,25 @@ class RoPEAttention(nn.Module):
         attn = attn.softmax(dim=-1).type_as(q)
         attn = self.attn_drop(attn)
 
-        x = (attn @ v).transpose(1, 2).reshape(B, N, C)
+        out = (attn @ v).transpose(1, 2) # (B, N, num_heads, head_dim)
+        
+        # Apply Gating
+        gates = self.to_gates(x).reshape(B, N, self.num_heads, 1)
+        out = out * gates.sigmoid()
+        
+        x = out.reshape(B, N, C)
         x = self.proj(x)
         x = self.proj_drop(x)
         return x
 
 class RoPETransformerBlock(nn.Module):
-    """Transformer Block containing RoPE Attention."""
+    """Transformer Block containing RoPE Attention and RMSNorm."""
     def __init__(self, dim, num_heads, mlp_ratio=4.0, dropout=0.1):
         super().__init__()
-        self.norm1 = nn.LayerNorm(dim)
+        self.norm1 = RMSNorm(dim)
         self.attn = RoPEAttention(dim, num_heads, dropout)
         
-        self.norm2 = nn.LayerNorm(dim)
+        self.norm2 = RMSNorm(dim)
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = nn.Sequential(
             nn.Linear(dim, mlp_hidden_dim),
