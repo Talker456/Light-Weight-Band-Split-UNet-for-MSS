@@ -31,3 +31,14 @@ This implementation is based on the following research:
 | **DRUMS** | 2.91 dB | 3.97 dB |
 | **BASS** | 2.42 dB | 2.96 dB |
 | **OTHER** | 2.32 dB | 2.56 dB |
+
+---
+
+### 3. L1 + MRSTFT (default configs)
+
+| STEM | cSDR (Median) | uSDR (Mean) |
+| :--- | :--- | :--- |
+| **VOCALS** | -1.81 dB | -1.98 dB |
+| **DRUMS** | 1.88 dB | 2.36 dB |
+| **BASS** | -1.12 dB | -1.47 dB |
+| **OTHER** | -2.43 dB | -2.36 dB |
