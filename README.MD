@@ -42,3 +42,14 @@ This implementation is based on the following research:
 | **DRUMS** | 1.88 dB | 2.36 dB |
 | **BASS** | -1.12 dB | -1.47 dB |
 | **OTHER** | -2.43 dB | -2.36 dB |
+
+
+### 4. L1 + Gated Attn + RMSNorm (doubled epoch, n_rope inc by 1)
+============================================================
+STEM       | cSDR (Median)   | uSDR (Mean)
+------------------------------------------------------------
+VOCALS     |       3.22 dB |       3.53 dB
+DRUMS      |       3.74 dB |       4.42 dB
+BASS       |       2.88 dB |       3.51 dB
+OTHER      |       2.79 dB |       2.87 dB
+============================================================
