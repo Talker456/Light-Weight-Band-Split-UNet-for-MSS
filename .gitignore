@@ -11,7 +11,7 @@ data/
 checkpoints/
 results/
 
-
+output/
 examples/
 tests/
 
