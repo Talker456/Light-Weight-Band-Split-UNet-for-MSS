@@ -75,14 +75,23 @@ def main():
     print(f"✅ Dataset Splitting: Train={len(train_dataset)}, Val={len(val_dataset)}")
 
     # Model initialization
+    n_fft = config['audio']['n_fft']
+    num_freq_bins = n_fft // 2 + 1
+    
     model = LightRoformer(
         in_channels=2,
         out_channels=2,
         n_band=config['model'].get('num_bands', 4),
         G=config['model'].get('G', 8),
         n_layers=config['model'].get('n_rope', 5),
-        n_heads=config['model'].get('num_heads', 8)
+        n_heads=config['model'].get('num_heads', 8),
+        num_freq_bins=num_freq_bins
     )
+    
+    # Count parameters
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"📊 Model Parameters: Total={total_params:,} | Trainable={trainable_params:,}")
     
     # Run trainer
     trainer = StemTrainer(

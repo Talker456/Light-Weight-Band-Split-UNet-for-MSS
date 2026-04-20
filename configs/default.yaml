@@ -13,7 +13,7 @@ model:
   num_dec_layers: 1 # Decoder layers (Asymmetric UNet)
   num_bands: 4   # N_band: Efficient equal subband splitting
   G: 8          # Growth factor for hierarchical channels(num_bands * G)
-  n_rope: 3      # Number of RoPE Transformer blocks in bottleneck
+  n_rope: 4      # Number of RoPE Transformer blocks in bottleneck
   num_heads: 8   # Number of attention heads
   dropout: 0.1
 

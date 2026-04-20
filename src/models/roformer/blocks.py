@@ -21,9 +21,12 @@ class EncoderBlock(nn.Module):
 
 class LightRoformerEncoder(nn.Module):
     """Encoder structure for hierarchical feature extraction."""
-    def __init__(self, C=2, N_band=4, G=8, N_splitEnc=3):
+    def __init__(self, C=2, N_band=4, G=8, N_splitEnc=3, num_freq_bins=None):
         super().__init__()
-        self.initial_stage = LightRoformerInitialStage(C, N_band, G)
+        self.initial_stage = LightRoformerInitialStage(C, N_band, G, num_freq_bins=num_freq_bins)
+        # In MelBandSplit, the output shape is (B, G * N_band, 1, T)
+        # But EncoderBlock expects (B, current_G, F, T)
+        # For non-uniform, F is effectively 1 after projection.
         current_G = G * N_band 
         
         self.enc1 = EncoderBlock(N_band, N_splitEnc, current_G, current_G * 2)
@@ -79,3 +82,18 @@ class LightRoformerAsymmetricDecoder(nn.Module):
         x_combined = x_up * x_skip_enc1
         out = self.post_smm(x_combined)
         return out
+
+class GLUMaskEstimator(nn.Module):
+    """Mask estimator using GLU for sharp boundaries."""
+    def __init__(self, G, n_band):
+        super().__init__()
+        self.GN = G * n_band
+        self.net = nn.Sequential(
+            nn.Conv2d(self.GN, self.GN * 2, kernel_size=1),
+            nn.GELU(),
+            nn.Conv2d(self.GN * 2, self.GN * 2, kernel_size=1),
+            nn.GLU(dim=1) # Reduces channels back to self.GN
+        )
+
+    def forward(self, x):
+        return self.net(x)
