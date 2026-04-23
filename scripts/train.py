@@ -83,6 +83,11 @@ def main():
         n_layers=config['model'].get('n_rope', 5),
         n_heads=config['model'].get('num_heads', 8)
     )
+
+    # Count parameters
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"📊 Model Parameters: Total={total_params:,} | Trainable={trainable_params:,}")
     
     # Run trainer
     trainer = StemTrainer(
@@ -94,10 +99,6 @@ def main():
         target_stem=args.stem
     )
 
-    # Count parameters
-    total_params = sum(p.numel() for p in model.parameters())
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"📊 Model Parameters: Total={total_params:,} | Trainable={trainable_params:,}")
     
     print(f"🚀 Starting training for [{args.stem}] stem...")
     trainer.fit()
