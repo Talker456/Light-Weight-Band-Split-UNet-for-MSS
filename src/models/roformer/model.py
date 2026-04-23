@@ -92,12 +92,14 @@ class LightRoformer(nn.Module):
         # D. Final mask estimation
         mask = self.final_stage(decoded) # (B, out_channels * 2, F_padded, T_padded)
         
-        # E. Apply Mask (Complex Multiplication)
+        # E. Apply Mask (Complex Multiplication) - Use float32 for phase precision
+        mask = mask.float()
         mask_real, mask_imag = mask.chunk(2, dim=1)
         mask_complex = torch.complex(mask_real, mask_imag)
         
         # Masking: Y = X * M
-        out_complex = x * mask_complex
+        # Ensure x is complex64 (float32-based) for precise multiplication
+        out_complex = x.to(mask_complex.dtype) * mask_complex
         
         # F. Remove padding
         if pad_f > 0 or pad_t > 0:

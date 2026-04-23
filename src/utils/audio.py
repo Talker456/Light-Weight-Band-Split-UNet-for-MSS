@@ -25,8 +25,9 @@ class AudioEngine:
         Input y: (Batch, Channels, Samples)
         Output: (Batch, Channels, Freqs, Frames, Real/Imag)
         """
-        # Ensure window is on the same device as input
-        window = self.window.to(y.device)
+        # Ensure input and window are float32 for numerical stability
+        y = y.float()
+        window = self.window.to(y.device).float()
         
         batch_size, channels, samples = y.shape
         y = y.view(batch_size * channels, samples)
@@ -56,7 +57,13 @@ class AudioEngine:
         Input spec: (Batch, Channels, Freqs, Frames) complex tensor
         Output: (Batch, Channels, Samples)
         """
-        window = self.window.to(spec.device)
+        # Ensure spec and window are complex64/float32 for precision
+        if torch.is_complex(spec):
+            spec = spec.to(torch.complex64)
+        else:
+            spec = spec.float()
+            
+        window = self.window.to(spec.device).float()
         batch_size, channels, freqs, frames = spec.shape
         
         spec = spec.view(batch_size * channels, freqs, frames)
