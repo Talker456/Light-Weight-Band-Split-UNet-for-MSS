@@ -51,8 +51,8 @@ class StemTrainer:
         self.epochs = config['training']['epochs']
         self.best_val_loss = float('inf')
         
-        # AMP Scaler
-        self.scaler = GradScaler()
+        # AMP Scaler (using recommended torch.amp API)
+        self.scaler = torch.amp.GradScaler(device_type='cuda')
 
     def _get_target_dict(self, targets):
         if self.target_stem in targets:
