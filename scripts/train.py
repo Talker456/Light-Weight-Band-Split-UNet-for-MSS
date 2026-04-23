@@ -93,6 +93,11 @@ def main():
         device=device,
         target_stem=args.stem
     )
+
+    # Count parameters
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"📊 Model Parameters: Total={total_params:,} | Trainable={trainable_params:,}")
     
     print(f"🚀 Starting training for [{args.stem}] stem...")
     trainer.fit()
