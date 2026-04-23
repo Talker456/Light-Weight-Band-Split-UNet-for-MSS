@@ -47,6 +47,9 @@ class StemTrainer:
         self.criterion = CompositeLoss(sample_rate=self.sample_rate).to(self.device)
         self.epochs = config['training']['epochs']
         self.best_val_loss = float('inf')
+        
+        # Initialize GradScaler for AMP
+        self.scaler = torch.amp.GradScaler('cuda', enabled=torch.cuda.is_available())
 
     def _get_target_dict(self, targets):
         if self.target_stem in targets:
@@ -67,9 +70,12 @@ class StemTrainer:
                 continue
 
             self.optimizer.zero_grad()
-            out = self.model(mixture_spec)
-            estimates = {self.target_stem: out}
-            loss = self.criterion(estimates, target_dict, self.audio_engine)
+            
+            # Use autocast for mixed precision
+            with torch.amp.autocast(device_type='cuda', enabled=torch.cuda.is_available()):
+                out = self.model(mixture_spec)
+                estimates = {self.target_stem: out}
+                loss = self.criterion(estimates, target_dict, self.audio_engine)
 
             if torch.isnan(loss) or loss.item() > 20.0:
                 self.optimizer.zero_grad()
@@ -78,9 +84,16 @@ class StemTrainer:
                 torch.cuda.empty_cache()
                 continue
 
-            loss.backward()
+            # Scales loss and calls backward() to create scaled gradients
+            self.scaler.scale(loss).backward()
+            
+            # Unscale gradients before clipping
+            self.scaler.unscale_(self.optimizer)
             torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
-            self.optimizer.step()
+            
+            # Step optimizer and update scaler
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
             
             loss_val = loss.item()
             total_loss += loss_val
@@ -97,13 +110,14 @@ class StemTrainer:
         self.model.eval()
         total_loss = 0
         with torch.no_grad():
-            for mixture_spec, targets in self.val_loader:
-                mixture_spec = mixture_spec.to(self.device)
-                target_dict = self._get_target_dict(targets)
-                out = self.model(mixture_spec)
-                estimates = {self.target_stem: out}
-                loss = self.criterion(estimates, target_dict, self.audio_engine)
-                total_loss += loss.item()
+            with torch.amp.autocast(device_type='cuda', enabled=torch.cuda.is_available()):
+                for mixture_spec, targets in self.val_loader:
+                    mixture_spec = mixture_spec.to(self.device)
+                    target_dict = self._get_target_dict(targets)
+                    out = self.model(mixture_spec)
+                    estimates = {self.target_stem: out}
+                    loss = self.criterion(estimates, target_dict, self.audio_engine)
+                    total_loss += loss.item()
         return total_loss / len(self.val_loader)
 
     def fit(self):
@@ -117,6 +131,8 @@ class StemTrainer:
             self.model.load_state_dict(checkpoint['model_state_dict'])
             self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
             self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+            if 'scaler_state_dict' in checkpoint:
+                self.scaler.load_state_dict(checkpoint['scaler_state_dict'])
             start_epoch = checkpoint['epoch'] + 1
             self.best_val_loss = checkpoint.get('best_val_loss', float('inf'))
 
@@ -137,6 +153,7 @@ class StemTrainer:
                 'model_state_dict': self.model.state_dict(),
                 'optimizer_state_dict': self.optimizer.state_dict(),
                 'scheduler_state_dict': self.scheduler.state_dict(),
+                'scaler_state_dict': self.scaler.state_dict(),
                 'best_val_loss': self.best_val_loss
             }
             torch.save(checkpoint, latest_path)

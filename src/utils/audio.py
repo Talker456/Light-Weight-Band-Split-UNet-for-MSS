@@ -25,30 +25,31 @@ class AudioEngine:
         Input y: (Batch, Channels, Samples)
         Output: (Batch, Channels, Freqs, Frames, Real/Imag)
         """
-        # Ensure window is on the same device as input
-        window = self.window.to(y.device)
-        
-        batch_size, channels, samples = y.shape
-        y = y.view(batch_size * channels, samples)
-        
-        spec = torch.stft(
-            y, 
-            n_fft=self.n_fft, 
-            hop_length=self.hop_length, 
-            win_length=self.win_length, 
-            window=window, 
-            center=True, 
-            pad_mode='reflect', 
-            normalized=False, 
-            onesided=True,
-            return_complex=True
-        )
-        
-        # Reshape back to (Batch, Channels, Freqs, Frames)
-        _, freqs, frames = spec.shape
-        spec = spec.view(batch_size, channels, freqs, frames)
-        
-        return spec
+        with torch.amp.autocast(device_type='cuda', enabled=False):
+            # Ensure window is on the same device as input
+            window = self.window.to(y.device)
+            
+            batch_size, channels, samples = y.shape
+            y = y.view(batch_size * channels, samples)
+            
+            spec = torch.stft(
+                y.float(), # Force float32
+                n_fft=self.n_fft, 
+                hop_length=self.hop_length, 
+                win_length=self.win_length, 
+                window=window, 
+                center=True, 
+                pad_mode='reflect', 
+                normalized=False, 
+                onesided=True,
+                return_complex=True
+            )
+            
+            # Reshape back to (Batch, Channels, Freqs, Frames)
+            _, freqs, frames = spec.shape
+            spec = spec.view(batch_size, channels, freqs, frames)
+            
+            return spec
 
     def istft(self, spec, length=None):
         """
@@ -56,22 +57,23 @@ class AudioEngine:
         Input spec: (Batch, Channels, Freqs, Frames) complex tensor
         Output: (Batch, Channels, Samples)
         """
-        window = self.window.to(spec.device)
-        batch_size, channels, freqs, frames = spec.shape
-        
-        spec = spec.view(batch_size * channels, freqs, frames)
-        
-        y = torch.istft(
-            spec, 
-            n_fft=self.n_fft, 
-            hop_length=self.hop_length, 
-            win_length=self.win_length, 
-            window=window, 
-            center=True, 
-            normalized=False, 
-            onesided=True,
-            length=length
-        )
-        
-        y = y.view(batch_size, channels, -1)
-        return y
+        with torch.amp.autocast(device_type='cuda', enabled=False):
+            window = self.window.to(spec.device)
+            batch_size, channels, freqs, frames = spec.shape
+            
+            spec = spec.view(batch_size * channels, freqs, frames)
+            
+            y = torch.istft(
+                spec, 
+                n_fft=self.n_fft, 
+                hop_length=self.hop_length, 
+                win_length=self.win_length, 
+                window=window, 
+                center=True, 
+                normalized=False, 
+                onesided=True,
+                length=length
+            )
+            
+            y = y.view(batch_size, channels, -1)
+            return y

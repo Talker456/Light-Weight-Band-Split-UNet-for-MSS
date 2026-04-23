@@ -56,13 +56,14 @@ class LightRoformer(nn.Module):
         Input x: (B, C, F, T) - Complex spectrogram
         Output: (B, C, F, T) - Estimated source complex spectrogram
         """
-        B, C, F_orig, T_orig = x.shape
-        
-        # 1. Padding: Align to multiples of N_band and stride (8x)
-        pad_f = (self.n_band - (F_orig % self.n_band)) % self.n_band
-        pad_t = (8 - (T_orig % 8)) % 8
-        if pad_f > 0 or pad_t > 0:
-            x = F.pad(x, (0, pad_t, 0, pad_f))
+        with torch.amp.autocast(device_type='cuda', enabled=False):
+            B, C, F_orig, T_orig = x.shape
+            
+            # 1. Padding: Align to multiples of N_band and stride (8x)
+            pad_f = (self.n_band - (F_orig % self.n_band)) % self.n_band
+            pad_t = (8 - (T_orig % 8)) % 8
+            if pad_f > 0 or pad_t > 0:
+                x = F.pad(x, (0, pad_t, 0, pad_f))
         
         # A. Encoding and feature compression
         latent, skip1 = self.encoder(x)
@@ -76,12 +77,13 @@ class LightRoformer(nn.Module):
         # D. Final output restoration (real channel format)
         out = self.final_stage(decoded)
         
-        # E. Remove padding
-        if pad_f > 0 or pad_t > 0:
-            out = out[:, :, :F_orig, :T_orig]
-        
-        # F. Convert back to complex tensor
-        real, imag = out.chunk(2, dim=1)
-        out_complex = torch.complex(real, imag)
+        with torch.amp.autocast(device_type='cuda', enabled=False):
+            # E. Remove padding
+            if pad_f > 0 or pad_t > 0:
+                out = out[:, :, :F_orig, :T_orig]
+            
+            # F. Convert back to complex tensor
+            real, imag = out.chunk(2, dim=1)
+            out_complex = torch.complex(real.float(), imag.float())
         
         return out_complex
