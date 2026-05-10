@@ -7,7 +7,7 @@ venv/
 env/
 
 
-data/
+/data/
 checkpoints/
 results/
 

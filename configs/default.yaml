@@ -19,6 +19,7 @@ model:
 
 training:
   batch_size: 2  # Reduced from 16 to fit 8GB VRAM
+  samples_per_track: 100 # Strategy 1: Virtual Dataset Expansion
   lr: 0.0002     # 2e-4 (as per paper)
   epochs: 50
   optimizer: "adamw"

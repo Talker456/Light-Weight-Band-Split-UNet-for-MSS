@@ -3,7 +3,7 @@ import torch
 import gc
 from tqdm import tqdm
 from torch.utils.data import DataLoader
-from src.utils.audio import AudioEngine
+from src.utils.audio import AudioEngine, calculate_sdr
 from src.losses.composite import CompositeLoss
 
 class StemTrainer:
@@ -47,6 +47,7 @@ class StemTrainer:
         self.criterion = CompositeLoss(sample_rate=self.sample_rate).to(self.device)
         self.epochs = config['training']['epochs']
         self.best_val_loss = float('inf')
+        self.best_val_sdr = float('-inf')
 
     def _get_target_dict(self, targets):
         if self.target_stem in targets:
@@ -96,15 +97,27 @@ class StemTrainer:
     def validate(self):
         self.model.eval()
         total_loss = 0
+        total_sdr = 0
         with torch.no_grad():
             for mixture_spec, targets in self.val_loader:
                 mixture_spec = mixture_spec.to(self.device)
                 target_dict = self._get_target_dict(targets)
                 out = self.model(mixture_spec)
+                
+                # Loss calculation
                 estimates = {self.target_stem: out}
                 loss = self.criterion(estimates, target_dict, self.audio_engine)
                 total_loss += loss.item()
-        return total_loss / len(self.val_loader)
+                
+                # SDR calculation (Quality metric)
+                # Convert STFT back to Waveform
+                target_wav = self.audio_engine.istft(target_dict[self.target_stem])
+                est_wav = self.audio_engine.istft(out, length=target_wav.shape[-1])
+                
+                sdr = calculate_sdr(target_wav, est_wav)
+                total_sdr += sdr.item()
+                
+        return total_loss / len(self.val_loader), total_sdr / len(self.val_loader)
 
     def fit(self):
         ckpt_dir = os.path.join("checkpoints", self.target_stem)
@@ -119,24 +132,28 @@ class StemTrainer:
             self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
             start_epoch = checkpoint['epoch'] + 1
             self.best_val_loss = checkpoint.get('best_val_loss', float('inf'))
+            self.best_val_sdr = checkpoint.get('best_val_sdr', float('-inf'))
 
         for epoch in range(start_epoch, self.epochs + 1):
             train_loss = self.train_epoch(epoch)
-            val_loss = self.validate()
+            val_loss, val_sdr = self.validate()
             self.scheduler.step()
             
-            print(f"Epoch {epoch}: Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}")
+            print(f"Epoch {epoch}: Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}, Val SDR: {val_sdr:.2f}dB")
             
-            if val_loss < self.best_val_loss:
-                self.best_val_loss = val_loss
+            # Save best model based on SDR (Audio Quality)
+            if val_sdr > self.best_val_sdr:
+                self.best_val_sdr = val_sdr
                 save_path = os.path.join(ckpt_dir, f"best_model_{self.target_stem}.pth")
                 torch.save(self.model.state_dict(), save_path)
+                print(f"✨ New best SDR: {val_sdr:.2f}dB! Model saved.")
                 
             checkpoint = {
                 'epoch': epoch,
                 'model_state_dict': self.model.state_dict(),
                 'optimizer_state_dict': self.optimizer.state_dict(),
                 'scheduler_state_dict': self.scheduler.state_dict(),
-                'best_val_loss': self.best_val_loss
+                'best_val_loss': val_loss,
+                'best_val_sdr': self.best_val_sdr
             }
             torch.save(checkpoint, latest_path)
