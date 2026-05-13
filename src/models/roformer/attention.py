@@ -71,11 +71,15 @@ class RoPEAttention(nn.Module):
         cos, sin = self.rope(q, seq_len=N)
         q, k = apply_rotary_pos_emb(q, k, cos, sin)
 
-        attn = (q @ k.transpose(-2, -1)) * self.scale
-        attn = attn.softmax(dim=-1).type_as(q)
-        attn = self.attn_drop(attn)
-
-        out = (attn @ v).transpose(1, 2) # (B, N, num_heads, head_dim)
+        # Optimization: Use Scaled Dot-Product Attention (Flash Attention)
+        # SDPA handles scaling, softmax, and dropout internally with high efficiency
+        out = F.scaled_dot_product_attention(
+            q, k, v, 
+            dropout_p=self.attn_drop.p if self.training else 0.0,
+            is_causal=False
+        )
+        
+        out = out.transpose(1, 2) # (B, N, num_heads, head_dim)
         
         # Apply Gating
         gates = self.to_gates(x).reshape(B, N, self.num_heads, 1)

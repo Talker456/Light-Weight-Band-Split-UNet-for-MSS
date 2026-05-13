@@ -50,7 +50,7 @@ def main():
     random.seed(42)
     random.shuffle(all_tracks)
     
-    val_size = int(len(all_tracks) * 0.2)
+    val_size = int(len(all_tracks) * 0.1)
     val_tracks = all_tracks[:val_size]
     train_tracks = all_tracks[val_size:]
 
@@ -79,9 +79,15 @@ def main():
         out_channels=2,
         n_band=config['model'].get('num_bands', 4),
         G=config['model'].get('G', 8),
-        n_layers=config['model'].get('n_rope', 5),
-        n_heads=config['model'].get('num_heads', 8)
+        n_layers=config['model'].get('n_rope', 6),
+        n_heads=config['model'].get('num_heads', 8),
+        bottleneck_type=config['model'].get('bottleneck_type', 'rnn')
     )
+
+    # Count parameters
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"📊 Model Parameters: Total={total_params:,} | Trainable={trainable_params:,}")
     
     # Run trainer
     trainer = StemTrainer(

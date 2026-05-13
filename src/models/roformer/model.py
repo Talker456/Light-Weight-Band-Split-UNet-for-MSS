@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from src.models.roformer.blocks import (
     LightRoformerEncoder, 
     Bottleneck, 
+    RNNBottleneck,
     LightRoformerAsymmetricDecoder
 )
 
@@ -25,8 +26,8 @@ class LightRoformerFinalStage(nn.Module):
         return x
 
 class LightRoformer(nn.Module):
-    """Overall Moises-Light model pipeline based on Interleaved RoPE Transformer."""
-    def __init__(self, in_channels=2, out_channels=2, n_band=4, G=32, n_layers=5, n_heads=8):
+    """Overall Moises-Light model pipeline based on Interleaved RoPE Transformer or RNN."""
+    def __init__(self, in_channels=2, out_channels=2, n_band=4, G=32, n_layers=6, n_heads=8, bottleneck_type='rnn'):
         super().__init__()
         self.n_band = n_band
         self.G = G
@@ -35,15 +36,24 @@ class LightRoformer(nn.Module):
         # 1. Encoder (processes complex input by converting to real channels)
         self.encoder = LightRoformerEncoder(C=in_channels * 2, N_band=n_band, G=G, N_splitEnc=3)
         
-        # 2. Bottleneck (Interleaved RoPE Transformer)
+        # 2. Bottleneck selection
         bottleneck_channels = G * n_band * 4
-        self.bottleneck = Bottleneck(
-            channels=bottleneck_channels, 
-            n_band=n_band, 
-            n_split=3, 
-            num_layers=n_layers, 
-            num_heads=n_heads
-        )
+        if bottleneck_type == 'attention':
+            self.bottleneck = Bottleneck(
+                channels=bottleneck_channels, 
+                n_band=n_band, 
+                n_split=3, 
+                num_layers=n_layers, 
+                num_heads=n_heads
+            )
+        else: # Default: 'rnn'
+            self.bottleneck = RNNBottleneck(
+                channels=bottleneck_channels, 
+                n_band=n_band, 
+                n_split=3, 
+                num_layers=n_layers,
+                expand=1
+            )
         
         # 3. Asymmetric decoder
         self.decoder = LightRoformerAsymmetricDecoder(n_band=n_band, n_split=1, G=G)

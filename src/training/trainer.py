@@ -16,6 +16,10 @@ class StemTrainer:
         self.device = device
         self.target_stem = target_stem
         
+        # Enable TensorFloat32 (TF32) on Ampere+ GPUs for faster matmul
+        if device.type == "cuda":
+            torch.set_float32_matmul_precision('high')
+
         self.sample_rate = config['audio']['sample_rate']
         self.audio_engine = AudioEngine(sample_rate=self.sample_rate)
         
