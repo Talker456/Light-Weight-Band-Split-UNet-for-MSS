@@ -90,28 +90,30 @@ class MUSDBDataset(Dataset):
                 stem_audio[stem] = torch.zeros(2, self.segment_length)
                 continue
 
-            try:
-                # Determine random crop point independently according to the length of each song
-                info = torchaudio.info(stem_path)
-                total_frames = info.num_frames
-            except:
-                audio_tmp, _ = torchaudio.load(stem_path)
-                total_frames = audio_tmp.shape[1]
-                del audio_tmp
-            
-            start = 0
-            if total_frames > self.segment_length:
-                if self.is_train:
+            # Determine loading parameters based on mode
+            if self.is_train:
+                try:
+                    # Determine random crop point independently according to the length of each song
+                    info = torchaudio.info(stem_path)
+                    total_frames = info.num_frames
+                except:
+                    audio_tmp, _ = torchaudio.load(stem_path)
+                    total_frames = audio_tmp.shape[1]
+                    del audio_tmp
+
+                start = 0
+                if total_frames > self.segment_length:
                     start = random.randint(0, total_frames - self.segment_length)
-                else:
-                    start = (total_frames - self.segment_length) // 2
-            
-            # Audio loading and preprocessing
-            audio = self._load_audio(stem_path, offset=start, num_frames=self.segment_length)
-            
-            # Padding if length is insufficient
-            if audio.shape[1] < self.segment_length:
-                audio = F.pad(audio, (0, self.segment_length - audio.shape[1]))
+                
+                # Audio loading and preprocessing
+                audio = self._load_audio(stem_path, offset=start, num_frames=self.segment_length)
+                
+                # Padding if length is insufficient
+                if audio.shape[1] < self.segment_length:
+                    audio = F.pad(audio, (0, self.segment_length - audio.shape[1]))
+            else:
+                # Load full audio for validation
+                audio = self._load_audio(stem_path)
             
             # Apply data augmentation
             if self.augment:

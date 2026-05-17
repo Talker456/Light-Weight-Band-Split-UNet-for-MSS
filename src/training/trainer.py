@@ -5,6 +5,7 @@ from tqdm import tqdm
 from torch.utils.data import DataLoader
 from src.utils.audio import AudioEngine, calculate_sdr
 from src.losses.composite import CompositeLoss
+from src.utils.inference import apply_model_to_spec
 
 class StemTrainer:
     """
@@ -23,6 +24,11 @@ class StemTrainer:
         self.sample_rate = config['audio']['sample_rate']
         self.audio_engine = AudioEngine(sample_rate=self.sample_rate)
         
+        # Calculate segment_frames based on training duration
+        duration = config['audio'].get('duration', 4.0)
+        dummy = torch.zeros(1, 1, int(self.sample_rate * duration))
+        self.segment_frames = self.audio_engine.stft(dummy).shape[-1]
+        
         self.train_loader = DataLoader(
             train_dataset, 
             batch_size=config['training']['batch_size'], 
@@ -30,11 +36,12 @@ class StemTrainer:
             num_workers=config['training'].get('num_workers', 2),
             pin_memory=True if torch.cuda.is_available() else False
         )
+        # Validation loader always uses batch_size=1 for full track evaluation
         self.val_loader = DataLoader(
             val_dataset, 
-            batch_size=config['training']['batch_size'], 
+            batch_size=1, 
             shuffle=False,
-            num_workers=config['training'].get('num_workers', 2)
+            num_workers=config['training'].get('num_workers', 1)
         )
         
         self.optimizer = torch.optim.AdamW(
@@ -102,24 +109,42 @@ class StemTrainer:
         self.model.eval()
         total_loss = 0
         total_sdr = 0
+        overlap = self.config['training'].get('val_overlap', 0.25)
+        
         with torch.no_grad():
-            for mixture_spec, targets in self.val_loader:
-                mixture_spec = mixture_spec.to(self.device)
+            for mixture_spec, targets in tqdm(self.val_loader, desc=f"[Valid:{self.target_stem}]"):
+                # mixture_spec is (1, C, F, T), need (C, F, T) for apply_model_to_spec
+                mixture_spec = mixture_spec.squeeze(0).to(self.device)
                 target_dict = self._get_target_dict(targets)
-                out = self.model(mixture_spec)
+                # Ensure targets are also squeezed for consistency if needed, 
+                # but _get_target_dict already moves them to device.
+                # Since batch_size=1, targets[stem] is (1, C, F, T)
                 
-                # Loss calculation
-                estimates = {self.target_stem: out}
+                # Use sliding window inference for full track
+                out = apply_model_to_spec(
+                    self.model, 
+                    mixture_spec, 
+                    segment_frames=self.segment_frames,
+                    overlap=overlap
+                )
+                
+                # Prepare for loss and SDR (wrap back to batch dimension)
+                estimates = {self.target_stem: out.unsqueeze(0)}
+                # target_dict[self.target_stem] is already (1, C, F, T)
+                
                 loss = self.criterion(estimates, target_dict, self.audio_engine)
                 total_loss += loss.item()
                 
-                # SDR calculation (Quality metric)
-                # Convert STFT back to Waveform
+                # SDR calculation
                 target_wav = self.audio_engine.istft(target_dict[self.target_stem])
-                est_wav = self.audio_engine.istft(out, length=target_wav.shape[-1])
+                est_wav = self.audio_engine.istft(estimates[self.target_stem], length=target_wav.shape[-1])
                 
                 sdr = calculate_sdr(target_wav, est_wav)
                 total_sdr += sdr.item()
+                
+                del out, estimates, target_dict, mixture_spec
+                gc.collect()
+                torch.cuda.empty_cache()
                 
         return total_loss / len(self.val_loader), total_sdr / len(self.val_loader)
 
