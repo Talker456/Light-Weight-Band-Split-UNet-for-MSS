@@ -19,7 +19,8 @@ def load_model(stem, config, device):
         n_band=config['model'].get('num_bands', 4),
         G=config['model'].get('G', 8),
         n_layers=config['model'].get('n_rope', 5),
-        n_heads=config['model'].get('num_heads', 8)
+        n_heads=config['model'].get('num_heads', 8),
+        bottleneck_type=config['model'].get('bottleneck_type', 'attention')
     ).to(device)
     
     model_path = os.path.join("checkpoints", stem, f"best_model_{stem}.pth")
@@ -116,7 +117,7 @@ def separate(input_path, output_dir, config_path, target_stems=None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", type=str, required=True)
-    parser.add_argument("--output", type=str, default="output")
+    parser.add_argument("--output", type=str, default="results")
     parser.add_argument("--stems", type=str, nargs="+", default=["all"])
     parser.add_argument("--config", type=str, default="configs/default.yaml")
     args = parser.parse_args()

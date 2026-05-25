@@ -3,8 +3,9 @@ import torch
 import gc
 from tqdm import tqdm
 from torch.utils.data import DataLoader
-from src.utils.audio import AudioEngine
+from src.utils.audio import AudioEngine, calculate_sdr
 from src.losses.composite import CompositeLoss
+from src.utils.inference import apply_model_to_spec
 
 class StemTrainer:
     """
@@ -16,8 +17,17 @@ class StemTrainer:
         self.device = device
         self.target_stem = target_stem
         
+        # Enable TensorFloat32 (TF32) on Ampere+ GPUs for faster matmul
+        if device.type == "cuda":
+            torch.set_float32_matmul_precision('high')
+
         self.sample_rate = config['audio']['sample_rate']
         self.audio_engine = AudioEngine(sample_rate=self.sample_rate)
+        
+        # Calculate segment_frames based on training duration
+        duration = config['audio'].get('duration', 4.0)
+        dummy = torch.zeros(1, 1, int(self.sample_rate * duration))
+        self.segment_frames = self.audio_engine.stft(dummy).shape[-1]
         
         self.train_loader = DataLoader(
             train_dataset, 
@@ -26,11 +36,12 @@ class StemTrainer:
             num_workers=config['training'].get('num_workers', 2),
             pin_memory=True if torch.cuda.is_available() else False
         )
+        # Validation loader always uses batch_size=1 for full track evaluation
         self.val_loader = DataLoader(
             val_dataset, 
-            batch_size=config['training']['batch_size'], 
+            batch_size=1, 
             shuffle=False,
-            num_workers=config['training'].get('num_workers', 2)
+            num_workers=config['training'].get('num_workers', 1)
         )
         
         self.optimizer = torch.optim.AdamW(
@@ -47,6 +58,7 @@ class StemTrainer:
         self.criterion = CompositeLoss(sample_rate=self.sample_rate).to(self.device)
         self.epochs = config['training']['epochs']
         self.best_val_loss = float('inf')
+        self.best_val_sdr = float('-inf')
 
     def _get_target_dict(self, targets):
         if self.target_stem in targets:
@@ -96,15 +108,45 @@ class StemTrainer:
     def validate(self):
         self.model.eval()
         total_loss = 0
+        total_sdr = 0
+        overlap = self.config['training'].get('val_overlap', 0.25)
+        
         with torch.no_grad():
-            for mixture_spec, targets in self.val_loader:
-                mixture_spec = mixture_spec.to(self.device)
+            for mixture_spec, targets in tqdm(self.val_loader, desc=f"[Valid:{self.target_stem}]"):
+                # mixture_spec is (1, C, F, T), need (C, F, T) for apply_model_to_spec
+                mixture_spec = mixture_spec.squeeze(0).to(self.device)
                 target_dict = self._get_target_dict(targets)
-                out = self.model(mixture_spec)
-                estimates = {self.target_stem: out}
+                # Ensure targets are also squeezed for consistency if needed, 
+                # but _get_target_dict already moves them to device.
+                # Since batch_size=1, targets[stem] is (1, C, F, T)
+                
+                # Use sliding window inference for full track
+                out = apply_model_to_spec(
+                    self.model, 
+                    mixture_spec, 
+                    segment_frames=self.segment_frames,
+                    overlap=overlap
+                )
+                
+                # Prepare for loss and SDR (wrap back to batch dimension)
+                estimates = {self.target_stem: out.unsqueeze(0)}
+                # target_dict[self.target_stem] is already (1, C, F, T)
+                
                 loss = self.criterion(estimates, target_dict, self.audio_engine)
                 total_loss += loss.item()
-        return total_loss / len(self.val_loader)
+                
+                # SDR calculation
+                target_wav = self.audio_engine.istft(target_dict[self.target_stem])
+                est_wav = self.audio_engine.istft(estimates[self.target_stem], length=target_wav.shape[-1])
+                
+                sdr = calculate_sdr(target_wav, est_wav)
+                total_sdr += sdr.item()
+                
+                del out, estimates, target_dict, mixture_spec
+                gc.collect()
+                torch.cuda.empty_cache()
+                
+        return total_loss / len(self.val_loader), total_sdr / len(self.val_loader)
 
     def fit(self):
         ckpt_dir = os.path.join("checkpoints", self.target_stem)
@@ -119,24 +161,28 @@ class StemTrainer:
             self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
             start_epoch = checkpoint['epoch'] + 1
             self.best_val_loss = checkpoint.get('best_val_loss', float('inf'))
+            self.best_val_sdr = checkpoint.get('best_val_sdr', float('-inf'))
 
         for epoch in range(start_epoch, self.epochs + 1):
             train_loss = self.train_epoch(epoch)
-            val_loss = self.validate()
+            val_loss, val_sdr = self.validate()
             self.scheduler.step()
             
-            print(f"Epoch {epoch}: Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}")
+            print(f"Epoch {epoch}: Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}, Val SDR: {val_sdr:.2f}dB")
             
-            if val_loss < self.best_val_loss:
-                self.best_val_loss = val_loss
+            # Save best model based on SDR (Audio Quality)
+            if val_sdr > self.best_val_sdr:
+                self.best_val_sdr = val_sdr
                 save_path = os.path.join(ckpt_dir, f"best_model_{self.target_stem}.pth")
                 torch.save(self.model.state_dict(), save_path)
+                print(f"✨ New best SDR: {val_sdr:.2f}dB! Model saved.")
                 
             checkpoint = {
                 'epoch': epoch,
                 'model_state_dict': self.model.state_dict(),
                 'optimizer_state_dict': self.optimizer.state_dict(),
                 'scheduler_state_dict': self.scheduler.state_dict(),
-                'best_val_loss': self.best_val_loss
+                'best_val_loss': val_loss,
+                'best_val_sdr': self.best_val_sdr
             }
             torch.save(checkpoint, latest_path)

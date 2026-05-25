@@ -37,42 +37,41 @@ def main():
         return
 
     # Dataset initialization and splitting (80:20)
-    full_dataset_metadata = MUSDBDataset(
+    temp_dataset = MUSDBDataset(
         root_dir=args.data_dir,
         sample_rate=config['audio']['sample_rate']
     )
     
-    total_count = len(full_dataset_metadata)
-    if total_count == 0:
+    all_tracks = temp_dataset.tracks
+    if not all_tracks:
         print(f"❌ Error: No tracks found at '{args.data_dir}'.")
         return
 
-    indices = list(range(total_count))
     random.seed(42)
-    random.shuffle(indices)
+    random.shuffle(all_tracks)
     
-    val_size = int(total_count * 0.2)
-    train_indices = indices[val_size:]
-    val_indices = indices[:val_size]
+    val_size = int(len(all_tracks) * 0.1)
+    val_tracks = all_tracks[:val_size]
+    train_tracks = all_tracks[val_size:]
 
-    train_dataset_full = MUSDBDataset(
+    train_dataset = MUSDBDataset(
         root_dir=args.data_dir, 
         sample_rate=config['audio']['sample_rate'],
         duration=config['audio'].get('duration', 4.0),
-        is_train=True
+        is_train=True,
+        samples_per_track=config['training'].get('samples_per_track', 1),
+        tracks=train_tracks
     )
     
-    val_dataset_full = MUSDBDataset(
+    val_dataset = MUSDBDataset(
         root_dir=args.data_dir,
         sample_rate=config['audio']['sample_rate'],
         duration=config['audio'].get('duration', 4.0),
-        is_train=False
+        is_train=False,
+        tracks=val_tracks
     )
 
-    train_dataset = Subset(train_dataset_full, train_indices)
-    val_dataset = Subset(val_dataset_full, val_indices)
-
-    print(f"✅ Dataset Splitting: Train={len(train_dataset)}, Val={len(val_dataset)}")
+    print(f"✅ Dataset Splitting: Train={len(train_dataset)} steps, Val={len(val_dataset)} tracks")
 
     # Model initialization
     model = LightRoformer(
@@ -80,9 +79,15 @@ def main():
         out_channels=2,
         n_band=config['model'].get('num_bands', 4),
         G=config['model'].get('G', 8),
-        n_layers=config['model'].get('n_rope', 5),
-        n_heads=config['model'].get('num_heads', 8)
+        n_layers=config['model'].get('n_rope', 6),
+        n_heads=config['model'].get('num_heads', 8),
+        bottleneck_type=config['model'].get('bottleneck_type', 'rnn')
     )
+
+    # Count parameters
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"📊 Model Parameters: Total={total_params:,} | Trainable={trainable_params:,}")
     
     # Run trainer
     trainer = StemTrainer(

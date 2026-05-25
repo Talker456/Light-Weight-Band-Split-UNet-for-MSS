@@ -37,6 +37,8 @@ class LightRoformerEncoder(nn.Module):
         x, _ = self.enc3(x)
         return x, skip1
 
+from src.models.roformer.dual_path import DualPathRNN
+
 class Bottleneck(nn.Module):
     """Bottleneck module that captures global context at the deepest part of the model."""
     def __init__(self, channels, n_band, n_split=3, num_layers=5, num_heads=8, dropout=0.1):
@@ -44,6 +46,25 @@ class Bottleneck(nn.Module):
         self.pre_split = SplitAndMergeModule(channels, n_band, n_split)
         self.layers = nn.ModuleList([
             InterleavedRoPEBlock(channels, num_heads, dropout=dropout)
+            for _ in range(num_layers)
+        ])
+
+    def forward(self, x):
+        x = self.pre_split(x)
+        for layer in self.layers:
+            x = layer(x)
+        return x
+
+class RNNBottleneck(nn.Module):
+    """
+    Alternative Bottleneck module using SCNet-style Dual-Path RNN.
+    Better for sequence dependency and potentially faster convergence.
+    """
+    def __init__(self, channels, n_band, n_split=3, num_layers=6, expand=1):
+        super().__init__()
+        self.pre_split = SplitAndMergeModule(channels, n_band, n_split)
+        self.layers = nn.ModuleList([
+            DualPathRNN(channels, expand=expand)
             for _ in range(num_layers)
         ])
 

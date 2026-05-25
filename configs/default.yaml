@@ -13,13 +13,16 @@ model:
   num_dec_layers: 1 # Decoder layers (Asymmetric UNet)
   num_bands: 4   # N_band: Efficient equal subband splitting
   G: 8          # Growth factor for hierarchical channels(num_bands * G)
-  n_rope: 3      # Number of RoPE Transformer blocks in bottleneck
+  n_rope: 4      # Number of RoPE/RNN blocks in bottleneck
   num_heads: 8   # Number of attention heads
   dropout: 0.1
+  bottleneck_type: "attention"  # 'rnn' or 'attention'
 
 training:
-  batch_size: 2  # Reduced from 16 to fit 8GB VRAM
-  lr: 0.0002     # 2e-4 (as per paper)
-  epochs: 50
+  batch_size: 2  
+  samples_per_track: 10 # Strategy 1: Virtual Dataset Expansion
+  lr: 0.0003   
+  epochs: 200
+  val_overlap: 0.25
   optimizer: "adamw"
   scheduler: "cosine"
