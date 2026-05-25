@@ -9,7 +9,7 @@ from src.data.augmentations import Compose, ChannelShuffle, GaussianNoise, Rando
 
 class MUSDBDataset(Dataset):
     """
-    Unified dataset class supporting MUSDB18-HQ FLAC files and on-the-fly mixing.
+    Unified dataset class supporting MUSDB18-HQ (WAV or FLAC) files and on-the-fly mixing.
     """
     def __init__(self, root_dir, sample_rate=44100, duration=4.0, is_train=True, samples_per_track=1, tracks=None):
         self.root_dir = root_dir
@@ -19,11 +19,13 @@ class MUSDBDataset(Dataset):
         self.samples_per_track = samples_per_track
         self.audio_engine = AudioEngine(sample_rate=sample_rate)
 
+        # Detection of file extension
+        self.extension = self._detect_extension()
+
         if self.is_train:
             self.augment = Compose([
                 ChannelShuffle(p=0.5),
                 RandomGain(0.8, 1.1)
-                # GaussianNoise(std=0.005, p=0.2)
             ])
         else:
             self.augment = None
@@ -32,21 +34,48 @@ class MUSDBDataset(Dataset):
             self.tracks = tracks
         else:
             self.tracks = self._get_tracks()
+            
+        # Cache track lengths to avoid redundant metadata reads
+        self.track_lengths = {}
+        if self.is_train:
+            print(f"Caching lengths for {len(self.tracks)} tracks ({self.extension})...")
+            for track in self.tracks:
+                stem_path = os.path.join(self.root_dir, track, f"vocals{self.extension}")
+                if os.path.exists(stem_path):
+                    try:
+                        info = torchaudio.info(stem_path)
+                        self.track_lengths[track] = info.num_frames
+                    except:
+                        self.track_lengths[track] = self.segment_length * 100
+
+    def _detect_extension(self):
+        """Detect whether the dataset uses .wav or .flac."""
+        if not os.path.exists(self.root_dir):
+            return ".flac"
+            
+        for root, dirs, files in os.walk(self.root_dir):
+            for f in files:
+                if f.endswith(".wav"): return ".wav"
+                if f.endswith(".flac"): return ".flac"
+        return ".flac"
 
     def _get_tracks(self):
         if not os.path.exists(self.root_dir):
             return []
             
         tracks = []
+        target_file = f"vocals{self.extension}"
+        
         for entry in os.listdir(self.root_dir):
             full_path = os.path.join(self.root_dir, entry)
             if os.path.isdir(full_path):
-                if os.path.exists(os.path.join(full_path, 'vocals.flac')):
+                if os.path.exists(os.path.join(full_path, target_file)):
                     tracks.append(entry)
                 else:
+                    # Search one level deeper for some dataset structures
                     for subentry in os.listdir(full_path):
                         sub_full_path = os.path.join(full_path, subentry)
-                        if os.path.isdir(sub_full_path) and os.path.exists(os.path.join(sub_full_path, 'vocals.flac')):
+                        if os.path.isdir(sub_full_path) and os.path.exists(os.path.join(sub_full_path, target_file)):
                             tracks.append(os.path.join(entry, subentry))
         return tracks
 
@@ -75,56 +104,36 @@ class MUSDBDataset(Dataset):
         stem_audio = {}
         
         for stem in stems:
-            # In training mode, select each stem randomly from different tracks (Inter-track Mixing)
             if self.is_train:
                 selected_idx = random.randint(0, len(self.tracks) - 1)
+                track_name = self.tracks[selected_idx]
             else:
-                selected_idx = idx
+                track_name = self.tracks[idx]
                 
-            track_path = os.path.join(self.root_dir, self.tracks[selected_idx])
-            stem_path = os.path.join(track_path, f"{stem}.flac")
+            track_path = os.path.join(self.root_dir, track_name)
+            stem_path = os.path.join(track_path, f"{stem}{self.extension}")
             
-            # Handling if the corresponding stem file does not exist
             if not os.path.exists(stem_path):
-                # Since the stem might also be missing in other songs, search iteratively or fill with zeros
                 stem_audio[stem] = torch.zeros(2, self.segment_length)
                 continue
 
-            # Determine loading parameters based on mode
             if self.is_train:
-                try:
-                    # Determine random crop point independently according to the length of each song
-                    info = torchaudio.info(stem_path)
-                    total_frames = info.num_frames
-                except:
-                    audio_tmp, _ = torchaudio.load(stem_path)
-                    total_frames = audio_tmp.shape[1]
-                    del audio_tmp
-
+                total_frames = self.track_lengths.get(track_name, self.segment_length * 10)
                 start = 0
                 if total_frames > self.segment_length:
                     start = random.randint(0, total_frames - self.segment_length)
                 
-                # Audio loading and preprocessing
                 audio = self._load_audio(stem_path, offset=start, num_frames=self.segment_length)
-                
-                # Padding if length is insufficient
                 if audio.shape[1] < self.segment_length:
                     audio = F.pad(audio, (0, self.segment_length - audio.shape[1]))
             else:
-                # Load full audio for validation
                 audio = self._load_audio(stem_path)
             
-            # Apply data augmentation
             if self.augment:
                 audio = self.augment(audio)
-                
             stem_audio[stem] = audio
 
-        # Combine stems extracted from different songs to create a new mixture
         mixture = sum(stem_audio.values())
-        
-        # Spectrogram transformation
         mixture_spec = self.audio_engine.stft(mixture.unsqueeze(0)).squeeze(0)
         targets = {s: self.audio_engine.stft(a.unsqueeze(0)).squeeze(0) for s, a in stem_audio.items()}
         

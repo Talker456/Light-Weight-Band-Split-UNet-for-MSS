@@ -19,7 +19,8 @@ def load_model(stem, config, device):
         n_band=config['model'].get('num_bands', 4),
         G=config['model'].get('G', 8),
         n_layers=config['model'].get('n_rope', 5),
-        n_heads=config['model'].get('num_heads', 8)
+        n_heads=config['model'].get('num_heads', 8),
+        bottleneck_type=config['model'].get('bottleneck_type', 'attention')
     ).to(device)
     
     model_path = os.path.join("checkpoints", stem, f"best_model_{stem}.pth")

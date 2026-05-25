@@ -12,44 +12,34 @@ This implementation is based on the following research:
 
 ## 📊 Evaluation Results
 
-### 1. L1, intra-track-mixing (default configs)
+### V1
+
+
+- Audio conifg
+
+| n_fft | hop | win | duration |
+| :--- | :--- | :--- | :--- |
+| 6144| 1024 | 6144 | 4.0  |
+
+- Model config
+
+| n_enc_layer | n_dec_layer | n_bands | G | n_rope | n_head |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| 3| 1 | 4 | 32 | 4 | 8 |
+
+- Training config
+
+| batch_size| sample_per_track | lr | epoch | 
+| :--- | :--- | :--- | :--- | 
+| 2| 10(900 chunks) | 0.0003 | 200
+
+- Museval Evaluation
 
 | STEM | cSDR (Median) | uSDR (Mean) |
 | :--- | :--- | :--- |
-| **VOCALS** | 2.85 dB | 2.99 dB |
-| **DRUMS** | 2.65 dB | 3.29 dB |
-| **BASS** | 2.87 dB | 3.15 dB |
-| **OTHER** | 2.40 dB | 2.64 dB |
+| **VOCALS** | 4.31 dB | 4.86 dB |
+| **DRUMS** | - | - |
+| **BASS** | - | - |
+| **OTHER** | - | - |
 
 ---
-
-### 2. L1, inter-track-mixing (default configs)
-
-| STEM | cSDR (Median) | uSDR (Mean) |
-| :--- | :--- | :--- |
-| **VOCALS** | 2.52 dB | 2.90 dB |
-| **DRUMS** | 2.91 dB | 3.97 dB |
-| **BASS** | 2.42 dB | 2.96 dB |
-| **OTHER** | 2.32 dB | 2.56 dB |
-
----
-
-### 3. L1 + MRSTFT (default configs)
-
-| STEM | cSDR (Median) | uSDR (Mean) |
-| :--- | :--- | :--- |
-| **VOCALS** | -1.81 dB | -1.98 dB |
-| **DRUMS** | 1.88 dB | 2.36 dB |
-| **BASS** | -1.12 dB | -1.47 dB |
-| **OTHER** | -2.43 dB | -2.36 dB |
-
-
-### 4. L1 + Gated Attn + RMSNorm (doubled epoch, n_rope inc by 1)
-============================================================
-STEM       | cSDR (Median)   | uSDR (Mean)
-------------------------------------------------------------
-VOCALS     |       3.22 dB |       3.53 dB
-DRUMS      |       3.74 dB |       4.42 dB
-BASS       |       2.88 dB |       3.51 dB
-OTHER      |       2.79 dB |       2.87 dB
-============================================================
