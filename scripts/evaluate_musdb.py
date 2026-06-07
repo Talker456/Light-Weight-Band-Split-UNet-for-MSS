@@ -26,7 +26,7 @@ def load_model(stem, config, device):
         bottleneck_type=config['model'].get('bottleneck_type', 'attention')
     ).to(device)
     
-    model_path = os.path.join("checkpoints", stem, f"best_model_{stem}-99-515.pth")
+    model_path = os.path.join("checkpoints", stem, f"best_model_{stem}.pth")
     if os.path.exists(model_path):
         state_dict = torch.load(model_path, map_location=device)
         if isinstance(state_dict, dict) and 'model_state_dict' in state_dict:
