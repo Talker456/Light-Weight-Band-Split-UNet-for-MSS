@@ -21,3 +21,8 @@ profile/
 *.swp
 *.swo
 .DS_Store
+
+docs/
+
+tests/*
+tmp/

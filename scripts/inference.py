@@ -10,24 +10,19 @@ from tqdm import tqdm
 # Add project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from src.models.roformer.model import LightRoformer
+from src.models.factory import build_model
 from src.utils.audio import AudioEngine
 
 def load_model(stem, config, device):
-    model = LightRoformer(
-        in_channels=2, out_channels=2,
-        n_band=config['model'].get('num_bands', 4),
-        G=config['model'].get('G', 8),
-        n_layers=config['model'].get('n_rope', 5),
-        n_heads=config['model'].get('num_heads', 8),
-        bottleneck_type=config['model'].get('bottleneck_type', 'attention')
-    ).to(device)
+    model = build_model(config, gradient_checkpointing=False).to(device)
     
-    model_path = os.path.join("checkpoints", stem, f"best_model_{stem}.pth")
+    checkpoint_root = config.get('training', {}).get('checkpoint_dir', 'checkpoints/paper_v5')
+    model_path = os.path.join(checkpoint_root, stem, f"best_model_{stem}.pth")
     if os.path.exists(model_path):
-        state_dict = torch.load(model_path, map_location=device)
-        if isinstance(state_dict, dict) and 'model_state_dict' in state_dict:
-            state_dict = state_dict['model_state_dict']
+        checkpoint = torch.load(model_path, map_location=device)
+        metadata = checkpoint.get('model_metadata', {}) if isinstance(checkpoint, dict) else {}
+        model.validate_checkpoint_metadata(metadata)
+        state_dict = checkpoint['model_state_dict']
         model.load_state_dict(state_dict)
         print(f"✅ Loaded [{stem}]")
     else:
@@ -48,8 +43,8 @@ def separate(input_path, output_dir, config_path, target_stems=None):
         audio = torchaudio.transforms.Resample(sr, sample_rate)(audio)
     if audio.shape[0] == 1: audio = audio.repeat(2, 1)
     
-    chunk_samples = int(6.0 * sample_rate)
-    overlap_samples = int(1.0 * sample_rate)
+    chunk_samples = int(config['audio'].get('duration', 4.0) * sample_rate)
+    overlap_samples = chunk_samples // 2
     hop_samples = chunk_samples - overlap_samples
 
     engine = AudioEngine(

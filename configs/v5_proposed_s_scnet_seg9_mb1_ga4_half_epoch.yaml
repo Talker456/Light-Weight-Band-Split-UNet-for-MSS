@@ -1,0 +1,62 @@
+# Paper-aligned Proposed-S preset for a single NVIDIA T4 (16 GB).
+audio:
+  sample_rate: 44100
+  n_fft: 6144
+  hop_length: 1024
+  win_length: 6144
+  duration: 9.0
+
+model:
+  name: "v5_proposed_s_scnet_seg9_mb1_ga4_half_epoch"
+  architecture_version: "v5"
+  num_layers: 3
+  num_dec_layers: 1
+  num_bands: 4
+  freq_dim: 2048
+  G: 32
+  n_rope: 6
+  num_heads: 8
+  n_split_enc: 3
+  n_split_dec: 1
+  bn_factor: 8
+  dropout: 0.1
+  bottleneck_type: "attention"
+  normalization: "group"
+  activation: "relu"
+  input_normalization: "sample_zscore"
+  output_mode: "direct"
+
+loss:
+  mode: "scnet_spec_rmse"
+  n_fft: 6144
+  win_length: 6144
+  hop_length: 1024
+  normalized: true
+  fft_sizes: [4096, 2048, 1024, 512, 256]
+  multi_resolution_weight: 1.0
+
+training:
+  checkpoint_dir: "checkpoints/paper_v5_scnet_rmse_t4"
+  backup_checkpoint_dir: null
+  batch_size: 1
+  micro_batch_size: 1
+  gradient_accumulation_steps: 4
+  gradient_checkpointing: true
+  amp: true
+  # Keep validation in FP32; decoder skip products can overflow in FP16.
+  validation_amp: false
+  # null follows DTTNet: total training duration divided by segment duration.
+  samples_per_track: null
+  epoch_size_fraction: 1.0
+  lr: 0.0002
+  epochs: 200
+  val_overlap: 0.5
+  num_workers: 2
+  val_num_workers: 0
+  diagnostics_log_interval: 50
+  diagnostics_log_validation_tracks: true
+  decoder_diagnostics_interval: 225
+  weight_decay: 0.0
+  optimizer: "adam"
+  scheduler: "cosine"
+

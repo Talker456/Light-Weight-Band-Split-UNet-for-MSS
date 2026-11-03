@@ -11,12 +11,26 @@ class MUSDBDataset(Dataset):
     """
     Unified dataset class supporting MUSDB18-HQ (WAV or FLAC) files and on-the-fly mixing.
     """
-    def __init__(self, root_dir, sample_rate=44100, duration=4.0, is_train=True, samples_per_track=1, tracks=None):
+    def __init__(
+        self,
+        root_dir,
+        sample_rate=44100,
+        duration=4.0,
+        is_train=True,
+        samples_per_track=1,
+        epoch_size_fraction=1.0,
+        tracks=None,
+        target_stems=None,
+    ):
         self.root_dir = root_dir
         self.sample_rate = sample_rate
         self.segment_length = int(sample_rate * duration)
         self.is_train = is_train
         self.samples_per_track = samples_per_track
+        if not 0 < epoch_size_fraction <= 1.0:
+            raise ValueError("epoch_size_fraction must be in the interval (0, 1]")
+        self.epoch_size_fraction = epoch_size_fraction
+        self.target_stems = set(target_stems or ['vocals', 'drums', 'bass', 'other'])
         self.audio_engine = AudioEngine(sample_rate=sample_rate)
 
         # Detection of file extension
@@ -81,6 +95,12 @@ class MUSDBDataset(Dataset):
 
     def __len__(self):
         if self.is_train:
+            # Match DTTNet's epoch definition when no fixed multiplier is set:
+            # one epoch covers the total raw duration once in expectation.
+            if self.samples_per_track is None:
+                total_frames = sum(self.track_lengths.values())
+                full_epoch_size = total_frames // self.segment_length
+                return max(1, int(full_epoch_size * self.epoch_size_fraction))
             return len(self.tracks) * self.samples_per_track
         return len(self.tracks)
 
@@ -135,6 +155,9 @@ class MUSDBDataset(Dataset):
 
         mixture = sum(stem_audio.values())
         mixture_spec = self.audio_engine.stft(mixture.unsqueeze(0)).squeeze(0)
-        targets = {s: self.audio_engine.stft(a.unsqueeze(0)).squeeze(0) for s, a in stem_audio.items()}
+        targets = {
+            stem: self.audio_engine.stft(stem_audio[stem].unsqueeze(0)).squeeze(0)
+            for stem in self.target_stems
+        }
         
         return mixture_spec, targets

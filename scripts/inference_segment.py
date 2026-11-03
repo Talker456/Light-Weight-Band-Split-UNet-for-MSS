@@ -13,7 +13,7 @@ from tqdm import tqdm
 # Add project root to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from src.models.roformer.model import LightRoformer
+from src.models.factory import build_model
 from src.utils.audio import AudioEngine
 
 class SegmentSeparator:
@@ -50,34 +50,21 @@ class SegmentSeparator:
         if stem in self.models:
             return self.models[stem]
             
-        model = LightRoformer(
-            in_channels=2, out_channels=2,
-            n_band=self.config['model'].get('num_bands', 4),
-            G=self.config['model'].get('G', 8),
-            n_layers=self.config['model'].get('n_rope', 5),
-            n_heads=self.config['model'].get('num_heads', 8),
-            bottleneck_type=self.config['model'].get('bottleneck_type', 'attention')
-        ).to(self.device)
+        model = build_model(self.config, gradient_checkpointing=False).to(self.device)
         
         # Check standard checkpoint paths
-        model_path = os.path.join(self.checkpoint_dir, stem, f"best_model_{stem}.pth")
+        checkpoint_root = self.config.get('training', {}).get('checkpoint_dir', self.checkpoint_dir)
+        model_path = os.path.join(checkpoint_root, stem, f"best_model_{stem}.pth")
         
-        # Fallback to secondary pattern if best_model_stem.pth is not found
-        if not os.path.exists(model_path):
-            stem_dir = os.path.join(self.checkpoint_dir, stem)
-            if os.path.exists(stem_dir):
-                files = [f for f in os.listdir(stem_dir) if f.startswith("best_model_") and f.endswith(".pth")]
-                if files:
-                    model_path = os.path.join(stem_dir, files[0])
-
         if os.path.exists(model_path):
-            state_dict = torch.load(model_path, map_location=self.device)
-            if isinstance(state_dict, dict) and 'model_state_dict' in state_dict:
-                state_dict = state_dict['model_state_dict']
+            checkpoint = torch.load(model_path, map_location=self.device)
+            metadata = checkpoint.get('model_metadata', {}) if isinstance(checkpoint, dict) else {}
+            model.validate_checkpoint_metadata(metadata)
+            state_dict = checkpoint['model_state_dict']
             model.load_state_dict(state_dict)
             print(f"✅ Loaded [{stem}] checkpoint from {model_path}")
         else:
-            print(f"⚠️ Warning: [{stem}] checkpoint not found at {model_path}. Using random weights.")
+            raise FileNotFoundError(f"Checkpoint not found: {model_path}")
             
         model.eval()
         self.models[stem] = model
@@ -149,8 +136,8 @@ class SegmentSeparator:
         audio_norm = (audio - mean) / (std + 1e-10)
         
         # Overlap-add setup
-        chunk_samples = int(6.0 * sr)
-        overlap_samples = int(1.0 * sr)
+        chunk_samples = int(self.config['audio'].get('duration', 4.0) * sr)
+        overlap_samples = chunk_samples // 2
         hop_samples = chunk_samples - overlap_samples
         
         window = torch.hann_window(overlap_samples * 2)

@@ -1,0 +1,74 @@
+# Paper-aligned Proposed-S preset for Kaggle Notebooks free GPUs.
+#
+# Kaggle currently assigns either one 16 GB P100 or two 16 GB T4 GPUs.  The
+# trainer is single-GPU, so a T4 x2 session uses one T4.  Compared with the
+# validated 8 GB local preset, a micro-batch of two uses the extra VRAM while
+# accumulation=2 preserves the same effective batch size of four.
+audio:
+  sample_rate: 44100
+  n_fft: 6144
+  hop_length: 1024
+  win_length: 6144
+  duration: 12.0
+
+model:
+  name: "v5_proposed_s_scnet_seg12_mb2_ga2_full_epoch"
+  architecture_version: "v5"
+  num_layers: 3
+  num_dec_layers: 1
+  num_bands: 4
+  freq_dim: 2048
+  G: 32
+  n_rope: 6
+  num_heads: 8
+  n_split_enc: 3
+  n_split_dec: 1
+  bn_factor: 8
+  dropout: 0.1
+  bottleneck_type: "attention"
+  normalization: "group"
+  activation: "relu"
+  input_normalization: "sample_zscore"
+  output_mode: "direct"
+
+loss:
+  mode: "scnet_spec_rmse"
+  n_fft: 6144
+  win_length: 6144
+  hop_length: 1024
+  normalized: true
+  fft_sizes: [4096, 2048, 1024, 512, 256]
+  multi_resolution_weight: 1.0
+
+training:
+  # /kaggle/working is writable and is captured as Notebook version output.
+  # Restore a prior session's latest checkpoint here before resuming training.
+  checkpoint_dir: "/kaggle/working/checkpoints/paper_v5_scnet_rmse_kaggle"
+  backup_checkpoint_dir: null
+  batch_size: 2
+  micro_batch_size: 2
+  gradient_accumulation_steps: 2
+  gradient_checkpointing: true
+  amp: true
+  # Keep validation in FP32; decoder skip products can overflow in FP16.
+  validation_amp: false
+  # A full epoch follows total train duration / 12-second segment duration.
+  samples_per_track: null
+  epoch_size_fraction: 1.0
+  lr: 0.0002
+  epochs: 200
+  val_overlap: 0.5
+  # Kaggle GPU sessions expose four CPU cores.  Leave two for the trainer and
+  # validation while two persistent workers decode FLAC segments.
+  num_workers: 2
+  persistent_workers: true
+  prefetch_factor: 2
+  # Whole-track validation tensors are large, so avoid worker IPC/shared-memory
+  # pressure in the notebook container.
+  val_num_workers: 0
+  diagnostics_log_interval: 50
+  diagnostics_log_validation_tracks: true
+  decoder_diagnostics_interval: 200
+  weight_decay: 0.0
+  optimizer: "adam"
+  scheduler: "cosine"

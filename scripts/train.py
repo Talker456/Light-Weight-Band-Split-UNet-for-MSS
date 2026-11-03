@@ -8,8 +8,7 @@ import sys
 # Add project root to sys.path to recognize src package
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from torch.utils.data import Subset
-from src.models.roformer.model import LightRoformer
+from src.models.factory import build_model
 from src.data.dataset import MUSDBDataset
 from src.training.trainer import StemTrainer
 
@@ -60,7 +59,9 @@ def main():
         duration=config['audio'].get('duration', 4.0),
         is_train=True,
         samples_per_track=config['training'].get('samples_per_track', 1),
-        tracks=train_tracks
+        epoch_size_fraction=config['training'].get('epoch_size_fraction', 1.0),
+        tracks=train_tracks,
+        target_stems=[args.stem],
     )
     
     val_dataset = MUSDBDataset(
@@ -68,21 +69,14 @@ def main():
         sample_rate=config['audio']['sample_rate'],
         duration=config['audio'].get('duration', 4.0),
         is_train=False,
-        tracks=val_tracks
+        tracks=val_tracks,
+        target_stems=[args.stem],
     )
 
     print(f"✅ Dataset Splitting: Train={len(train_dataset)} steps, Val={len(val_dataset)} tracks")
 
     # Model initialization
-    model = LightRoformer(
-        in_channels=2,
-        out_channels=2,
-        n_band=config['model'].get('num_bands', 4),
-        G=config['model'].get('G', 8),
-        n_layers=config['model'].get('n_rope', 6),
-        n_heads=config['model'].get('num_heads', 8),
-        bottleneck_type=config['model'].get('bottleneck_type', 'rnn')
-    )
+    model = build_model(config)
 
     # Count parameters
     total_params = sum(p.numel() for p in model.parameters())

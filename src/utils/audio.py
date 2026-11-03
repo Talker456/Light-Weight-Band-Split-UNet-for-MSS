@@ -25,8 +25,9 @@ class AudioEngine:
         Input y: (Batch, Channels, Samples)
         Output: (Batch, Channels, Freqs, Frames, Real/Imag)
         """
-        # Ensure window is on the same device as input
-        window = self.window.to(y.device)
+        # torch.stft/istft remain in FP32 for stable complex-domain training.
+        y = y.float()
+        window = self.window.to(y.device, dtype=torch.float32)
         
         batch_size, channels, samples = y.shape
         y = y.view(batch_size * channels, samples)
@@ -56,7 +57,8 @@ class AudioEngine:
         Input spec: (Batch, Channels, Freqs, Frames) complex tensor
         Output: (Batch, Channels, Samples)
         """
-        window = self.window.to(spec.device)
+        spec = spec.to(torch.complex64)
+        window = self.window.to(spec.device, dtype=torch.float32)
         batch_size, channels, freqs, frames = spec.shape
         
         spec = spec.view(batch_size * channels, freqs, frames)
@@ -75,20 +77,3 @@ class AudioEngine:
         
         y = y.view(batch_size, channels, -1)
         return y
-
-def calculate_sdr(ref, est, eps=1e-7):
-    """
-    Calculate Signal-to-Distortion Ratio (SDR) based on the provided standard.
-    ref: (Batch, Channels, Samples)
-    est: (Batch, Channels, Samples)
-    """
-    # Sum over both Channels (1) and Samples (2) as per standard
-    num = torch.sum(torch.square(ref), dim=(1, 2))
-    den = torch.sum(torch.square(ref - est), dim=(1, 2))
-    
-    # Numerical stability
-    num += eps
-    den += eps
-    
-    scores = 10 * torch.log10(num / den)
-    return scores.mean()
