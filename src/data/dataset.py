@@ -3,6 +3,7 @@ import random
 import torch
 import torch.nn.functional as F
 import torchaudio
+import soundfile as sf
 from torch.utils.data import Dataset
 from src.utils.audio import AudioEngine
 from src.data.augmentations import Compose, ChannelShuffle, GaussianNoise, RandomGain
@@ -57,10 +58,19 @@ class MUSDBDataset(Dataset):
                 stem_path = os.path.join(self.root_dir, track, f"vocals{self.extension}")
                 if os.path.exists(stem_path):
                     try:
-                        info = torchaudio.info(stem_path)
-                        self.track_lengths[track] = info.num_frames
-                    except:
-                        self.track_lengths[track] = self.segment_length * 100
+                        self.track_lengths[track] = sf.info(stem_path).frames
+                    except Exception as exc:
+                        raise RuntimeError(
+                            f"Failed to read audio metadata for {stem_path!r}"
+                        ) from exc
+
+            total_frames = sum(self.track_lengths.values())
+            full_epoch_size = total_frames // self.segment_length
+            print(
+                "Cached track lengths: "
+                f"total_frames={total_frames}, "
+                f"full_epoch_segments={full_epoch_size}, metadata_failures=0"
+            )
 
     def _detect_extension(self):
         """Detect whether the dataset uses .wav or .flac."""

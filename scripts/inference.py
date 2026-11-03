@@ -37,7 +37,6 @@ def separate(input_path, output_dir, config_path, target_stems=None):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     sample_rate = config['audio']['sample_rate']
 
-    metadata = torchaudio.info(input_path)
     audio, sr = torchaudio.load(input_path)
     if sr != sample_rate:
         audio = torchaudio.transforms.Resample(sr, sample_rate)(audio)

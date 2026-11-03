@@ -3,6 +3,7 @@ import sys
 import yaml
 import torch
 import torchaudio
+import soundfile as sf
 import numpy as np
 import argparse
 import librosa
@@ -104,8 +105,12 @@ class SegmentSeparator:
 
     def separate_segment(self, mixture_path, start_time, end_time, output_dir, target_stems=None):
         # 1. Get audio metadata & calculate segment frames
-        metadata = torchaudio.info(mixture_path)
-        orig_sr = metadata.sample_rate
+        try:
+            orig_sr = sf.info(mixture_path).samplerate
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed to read audio metadata for {mixture_path!r}"
+            ) from exc
         
         start_frame = int(start_time * orig_sr) if start_time is not None else 0
         if end_time is not None:

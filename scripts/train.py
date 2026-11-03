@@ -38,7 +38,8 @@ def main():
     # Dataset initialization and splitting (80:20)
     temp_dataset = MUSDBDataset(
         root_dir=args.data_dir,
-        sample_rate=config['audio']['sample_rate']
+        sample_rate=config['audio']['sample_rate'],
+        is_train=False,
     )
     
     all_tracks = temp_dataset.tracks
